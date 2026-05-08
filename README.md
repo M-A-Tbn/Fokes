@@ -3,8 +3,6 @@
 
 FokeS is a highly customizable, gamified productivity and focus-tracking application. Designed for students, professionals, and intense learners, it combines rigid daily planning with RPG-like progression to keep you deeply engaged in your work.
 
-![FokeS Logo](/public/logo.png)
-
 ---
 
 ## ✨ Key Features
@@ -17,6 +15,9 @@ Drag-and-drop daily tasks to reorder your day. Make isolated overrides for "toda
 
 ### 🧘 Zen Mode & Mini Player
 Immerse yourself in deep work with a massive, distraction-free fullscreen timer, or tuck the timer away in a sleek Desktop Mini-Player widget. Includes built-in ambient audio (Brown Noise).
+
+### ⏱️ Pomodoro Engine
+Customizable Pomodoro tab to engage in deep focus sessions independently of your roadmap. Configure focus/break durations, rounds, and track your session history.
 
 ### 🎮 RPG Gamification
 Earn XP, climb ranks, maintain daily streaks, and unlock creative achievement badges by hitting your goals.

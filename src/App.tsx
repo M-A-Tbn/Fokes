@@ -50,7 +50,9 @@ import {
   Headphones,
   Maximize2,
   Minimize2,
-  TableProperties
+  TableProperties,
+  Timer,
+  History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Filler, BarElement, RadialLinearScale } from 'chart.js';
@@ -113,7 +115,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : {};
   });
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<'daily' | 'calendar' | 'stats'>('daily');
+  const [activeTab, setActiveTab] = useState<'daily' | 'calendar' | 'stats' | 'pomodoro'>('daily');
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarQuarter, setCalendarQuarter] = useState(Math.floor(new Date().getMonth() / 3));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -133,6 +135,43 @@ export default function App() {
   const [diagDate, setDiagDate] = useState('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+
+  // Pomodoro States
+  const [pomoConfig, setPomoConfig] = useState({
+    focusTime: 25,
+    breakTime: 5,
+    longBreakTime: 15,
+    rounds: 4,
+    autoStartBreaks: false,
+    autoStartRounds: false,
+    sessionTitle: 'Focus Session',
+    subjectId: ''
+  });
+  const [currentPomoRound, setCurrentPomoRound] = useState(1);
+  const [isPomoBreak, setIsPomoBreak] = useState(false);
+  const [pomoHistory, setPomoHistory] = useState<{id: string; title: string; date: string; duration: number}[]>(() => {
+    const saved = localStorage.getItem('fokes_pomo_history');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('fokes_pomo_history', JSON.stringify(pomoHistory));
+  }, [pomoHistory]);
+
+  const startPomoSession = () => {
+    setIsTimerOpen(true);
+    setTimeLeft(pomoConfig.focusTime * 60);
+    setActiveTask({
+      id: `pomo-${Date.now()}`,
+      group: 'Study',
+      title: `${pomoConfig.sessionTitle} - Round ${currentPomoRound}`,
+      hours: pomoConfig.focusTime / 60,
+      subjectId: pomoConfig.subjectId || undefined
+    });
+    setTimerRunning(true);
+    setTimerMode('study');
+    setIsZenMode(true);
+  };
 
   // New Feature States
   const [isProgramConfigOpen, setIsProgramConfigOpen] = useState(false);
@@ -633,20 +672,75 @@ export default function App() {
       interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     } else if (timeLeft === 0 && timerRunning) {
       if (settings.timerSoundEnabled) playChime();
+      
+      const isPomoSession = activeTask?.id.startsWith('pomo-');
+
       if (timerMode === 'study') {
         if (activeTask) toggleTask(activeTask.id, true);
-        setTimerMode('break');
-        const sub = currentMonthConfig.subjects.find(s => s.id === activeTask?.subjectId);
-        setTimeLeft((sub?.breakDuration || 5) * 60);
-        showToast('Focus Session Complete! Time for a break.', 'success');
+        
+        if (isPomoSession) {
+          const isFinalRound = currentPomoRound >= pomoConfig.rounds;
+          const isLongBreak = currentPomoRound % 4 === 0; // Standard pomodoro long break every 4 rounds
+          
+          setTimerMode('break');
+          const breakDur = isLongBreak ? pomoConfig.longBreakTime : pomoConfig.breakTime;
+          setTimeLeft(breakDur * 60);
+          
+          // Save to history
+          setPomoHistory(prev => [{
+            id: Date.now().toString(),
+            title: pomoConfig.sessionTitle,
+            date: dateKey,
+            duration: pomoConfig.focusTime
+          }, ...prev].slice(0, 50));
+
+          showToast(`Round ${currentPomoRound} Complete! ${isLongBreak ? 'Time for a Long Break.' : 'Take a short break.'}`, 'success');
+          
+          if (!pomoConfig.autoStartBreaks) {
+            setTimerRunning(false);
+          }
+        } else {
+          setTimerMode('break');
+          const sub = currentMonthConfig.subjects.find(s => s.id === activeTask?.subjectId);
+          setTimeLeft((sub?.breakDuration || 5) * 60);
+          showToast('Focus Session Complete! Time for a break.', 'success');
+        }
       } else {
-        setTimerRunning(false);
-        setIsTimerOpen(false);
-        showToast('Break Over. Ready for the next session?', 'info');
+        // Break is over
+        if (isPomoSession) {
+          const nextRound = currentPomoRound + 1;
+          const isComplete = currentPomoRound >= pomoConfig.rounds;
+
+          if (isComplete) {
+            setTimerRunning(false);
+            setIsTimerOpen(false);
+            setIsZenMode(false);
+            setCurrentPomoRound(1);
+            showToast('Full Pomodoro Set Complete! Great work.', 'success');
+          } else {
+            setCurrentPomoRound(nextRound);
+            setTimerMode('study');
+            setTimeLeft(pomoConfig.focusTime * 60);
+            setActiveTask(prev => prev ? { 
+              ...prev, 
+              id: `pomo-${Date.now()}`,
+              title: `${pomoConfig.sessionTitle} - Round ${nextRound}` 
+            } : null);
+            
+            if (!pomoConfig.autoStartRounds) {
+              setTimerRunning(false);
+            }
+            showToast(`Break over. Starting Round ${nextRound}!`, 'info');
+          }
+        } else {
+          setTimerRunning(false);
+          setIsTimerOpen(false);
+          showToast('Break Over. Ready for the next session?', 'info');
+        }
       }
     }
     return () => clearInterval(interval);
-  }, [timerRunning, timeLeft, timerMode, activeTask, settings.timerSoundEnabled]);
+  }, [timerRunning, timeLeft, timerMode, activeTask, settings.timerSoundEnabled, pomoConfig, currentPomoRound]);
 
   // --- Confetti & Badges Logic ---
   useEffect(() => {
@@ -1062,6 +1156,7 @@ export default function App() {
         
         <div className="flex md:flex-col gap-2 w-full">
           <NavButton active={activeTab === 'daily'} onClick={() => setActiveTab('daily')} icon={<LayoutDashboard className="w-5 h-5" />} label="Dashboard" />
+          <NavButton active={activeTab === 'pomodoro'} onClick={() => setActiveTab('pomodoro')} icon={<Timer className="w-5 h-5" />} label="Pomodoro" />
           <NavButton active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} icon={<CalendarDays className="w-5 h-5" />} label="Roadmap" />
           <NavButton active={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon={<Activity className="w-5 h-5" />} label="Analytics" />
         </div>
@@ -1086,7 +1181,7 @@ export default function App() {
               )}
             </p>
             <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              {activeTab === 'daily' ? 'Daily Execution' : activeTab === 'calendar' ? 'Monthly Roadmaps' : 'Performance Analytics'}
+              {activeTab === 'daily' ? 'Daily Execution' : activeTab === 'pomodoro' ? 'Pomodoro Engine' : activeTab === 'calendar' ? 'Monthly Roadmaps' : 'Performance Analytics'}
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto mt-2 xl:mt-0">
@@ -1529,6 +1624,209 @@ export default function App() {
             </motion.div>
           )}
 
+          {activeTab === 'pomodoro' && (
+            <motion.div 
+              key="pomodoro"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="max-w-4xl mx-auto space-y-6"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <section className="bg-white/70 dark:bg-slate-900/70 border border-brand-100 dark:border-slate-800 p-8 rounded-[2.5rem] shadow-sm backdrop-blur-md">
+                   <div className="flex items-center justify-between mb-8">
+                      <div>
+                        <h2 className="font-black text-2xl text-slate-900 dark:text-white mb-1">Custom Pomodoro</h2>
+                        <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">Configuration</p>
+                      </div>
+                      <div className="p-3 bg-brand-100 dark:bg-brand-900/30 rounded-2xl">
+                        <Timer className="w-6 h-6 text-brand-600 dark:text-brand-400" />
+                      </div>
+                   </div>
+
+                   <div className="space-y-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Session Title</label>
+                          <input 
+                            type="text" 
+                            value={pomoConfig.sessionTitle}
+                            onChange={(e) => setPomoConfig(prev => ({ ...prev, sessionTitle: e.target.value }))}
+                            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500/20 transition-all hover:bg-white dark:hover:bg-slate-800 shadow-sm"
+                            placeholder="e.g. Deep Work, Reading, Coding"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Focus Subject</label>
+                          <select 
+                            value={pomoConfig.subjectId}
+                            onChange={(e) => setPomoConfig(prev => ({ ...prev, subjectId: e.target.value }))}
+                            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500/20 transition-all appearance-none cursor-pointer hover:bg-white dark:hover:bg-slate-800 shadow-sm"
+                          >
+                            <option value="">General Purpose</option>
+                            {currentMonthConfig.subjects.map(s => (
+                              <option key={s.id} value={s.id}>{s.title}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-5">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Focus Min</label>
+                          <input 
+                            type="number" 
+                            value={pomoConfig.focusTime}
+                            onChange={(e) => setPomoConfig(prev => ({ ...prev, focusTime: parseInt(e.target.value) || 25 }))}
+                            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500/20 transition-all text-center hover:bg-white dark:hover:bg-slate-800 shadow-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Short Break</label>
+                          <input 
+                            type="number" 
+                            value={pomoConfig.breakTime}
+                            onChange={(e) => setPomoConfig(prev => ({ ...prev, breakTime: parseInt(e.target.value) || 5 }))}
+                            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500/20 transition-all text-center hover:bg-white dark:hover:bg-slate-800 shadow-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-5">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Long Break</label>
+                          <input 
+                            type="number" 
+                            value={pomoConfig.longBreakTime}
+                            onChange={(e) => setPomoConfig(prev => ({ ...prev, longBreakTime: parseInt(e.target.value) || 15 }))}
+                            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500/20 transition-all text-center hover:bg-white dark:hover:bg-slate-800 shadow-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Rounds</label>
+                          <input 
+                            type="number" 
+                            value={pomoConfig.rounds}
+                            onChange={(e) => setPomoConfig(prev => ({ ...prev, rounds: parseInt(e.target.value) || 4 }))}
+                            className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500/20 transition-all text-center hover:bg-white dark:hover:bg-slate-800 shadow-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                           <div className="relative">
+                             <input 
+                               type="checkbox" 
+                               checked={pomoConfig.autoStartBreaks}
+                               onChange={(e) => setPomoConfig(prev => ({ ...prev, autoStartBreaks: e.target.checked }))}
+                               className="sr-only p-check"
+                             />
+                             <div className={cn("w-10 h-6 rounded-full transition-colors", pomoConfig.autoStartBreaks ? "bg-brand-500" : "bg-slate-200 dark:bg-slate-700")}></div>
+                             <div className={cn("absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform shadow-sm", pomoConfig.autoStartBreaks ? "translate-x-4" : "translate-x-0")}></div>
+                           </div>
+                           <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-brand-500 transition-colors uppercase tracking-widest">Auto Breaks</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                           <div className="relative">
+                             <input 
+                               type="checkbox" 
+                               checked={pomoConfig.autoStartRounds}
+                               onChange={(e) => setPomoConfig(prev => ({ ...prev, autoStartRounds: e.target.checked }))}
+                               className="sr-only p-check"
+                             />
+                             <div className={cn("w-10 h-6 rounded-full transition-colors", pomoConfig.autoStartRounds ? "bg-brand-500" : "bg-slate-200 dark:bg-slate-700")}></div>
+                             <div className={cn("absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform shadow-sm", pomoConfig.autoStartRounds ? "translate-x-4" : "translate-x-0")}></div>
+                           </div>
+                           <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-brand-500 transition-colors uppercase tracking-widest">Auto Rounds</span>
+                        </label>
+                      </div>
+
+                      <button 
+                        onClick={startPomoSession}
+                        className="w-full mt-8 py-5 rounded-[1.5rem] bg-brand-600 text-white font-black text-lg shadow-xl shadow-brand-500/30 hover:bg-brand-500 hover:shadow-brand-500/40 hover:-translate-y-0.5 transition-all active:translate-y-0 flex items-center justify-center gap-3"
+                      >
+                        <Rocket className="w-6 h-6" />
+                        Engage Pomodoro
+                      </button>
+                   </div>
+                </section>
+
+                <section className="space-y-6">
+                  <div className="bg-white/70 dark:bg-slate-900/70 border border-brand-100 dark:border-slate-800 p-8 rounded-[2.5rem] shadow-sm backdrop-blur-md w-full">
+                     <div className="flex items-center justify-between mb-6">
+                        <div>
+                           <h3 className="font-black text-2xl text-slate-900 dark:text-white mb-1">Recent Sessions</h3>
+                           <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">History</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                           <button onClick={() => setPomoHistory([])} className="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest">Clear</button>
+                           <div className="p-3 bg-brand-100 dark:bg-brand-900/30 rounded-2xl">
+                             <History className="w-6 h-6 text-brand-600 dark:text-brand-400" />
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="space-y-3 overflow-y-auto pr-2 pb-2">
+                        {pomoHistory.length === 0 ? (
+                          <div className="py-12 text-center">
+                             <Sparkles className="w-10 h-10 text-slate-200 dark:text-slate-800 mx-auto mb-3" />
+                             <p className="text-sm font-bold text-slate-400">History is empty.</p>
+                          </div>
+                        ) : (
+                          pomoHistory.map((h, i) => (
+                            <div key={h.id} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 group hover:border-brand-300 transition-all">
+                               <div>
+                                  <p className="text-sm font-bold text-slate-800 dark:text-white">{h.title}</p>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{h.date} • {h.duration}m</p>
+                               </div>
+                               <div className="p-2 bg-white dark:bg-slate-800 rounded-lg text-brand-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Check className="w-4 h-4" />
+                               </div>
+                            </div>
+                          ))
+                        )}
+                     </div>
+                  </div>
+
+                  <div className="bg-white/70 dark:bg-slate-900/70 border border-brand-100 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm backdrop-blur-md w-full">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="font-black text-2xl text-slate-900 dark:text-white mb-1">Today's Focus</h3>
+                        <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">Performance Metrics</p>
+                      </div>
+                      <div className="p-3 bg-brand-100 dark:bg-brand-900/30 rounded-2xl">
+                         <TargetIcon className="w-6 h-6 text-brand-600 dark:text-brand-400" />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-5">
+                         <div className="flex items-center gap-2 mb-2">
+                           <Timer className="w-4 h-4 text-brand-500" />
+                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Focus Time</p>
+                         </div>
+                        <div className="flex items-baseline gap-1">
+                          <p className="text-3xl font-black text-slate-900 dark:text-white">{pomoHistory.filter(h => h.date === dateKey).reduce((sum, h) => sum + h.duration, 0)}</p>
+                          <span className="text-xs font-bold text-slate-500">min</span>
+                        </div>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                           <ListTodo className="w-4 h-4 text-brand-500" />
+                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sessions</p>
+                        </div>
+                        <div className="flex items-baseline gap-1">
+                          <p className="text-3xl font-black text-slate-900 dark:text-white">{pomoHistory.filter(h => h.date === dateKey).length}</p>
+                          <span className="text-xs font-bold text-slate-500">completed</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </motion.div>
+          )}
           {activeTab === 'calendar' && (
             <motion.div 
               key="calendar"
@@ -1995,6 +2293,21 @@ export default function App() {
               <h2 className={cn("text-xl font-bold mb-2 uppercase tracking-widest", isZenMode ? "text-slate-400" : "text-slate-500 dark:text-slate-400")}>
                 {timerMode === 'study' ? `Focus: ${activeTask?.title}` : 'Recovery Phase'}
               </h2>
+              {activeTask?.id.startsWith('pomo-') && (
+                <div className="flex gap-2 mb-4">
+                  {Array.from({ length: pomoConfig.rounds }).map((_, i) => (
+                    <div 
+                      key={i} 
+                      className={cn(
+                        "w-3 h-3 rounded-full border transition-all",
+                        i + 1 < currentPomoRound ? "bg-brand-500 border-brand-500" : 
+                        i + 1 === currentPomoRound ? "bg-brand-500 border-brand-500 animate-pulse" : 
+                        "bg-transparent border-slate-300 dark:border-slate-700"
+                      )}
+                    />
+                  ))}
+                </div>
+              )}
               <div className={cn("text-8xl font-black mb-8 tracking-tighter", timerMode === 'study' ? "text-brand-600 dark:text-brand-500" : "text-emerald-500 dark:text-emerald-400")}>
                 {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
               </div>
