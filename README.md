@@ -27,15 +27,6 @@ Visualize your subject mastery and time allocation dynamically through beautiful
 
 ### 🗾 365-Day Activity Heatmap
 An interactive, GitHub-style contribution heatmap tracking your daily consistency. Click any day to time-travel and review completed tasks and past daily reflections.
-
----
-
-## 📸 App Preview
-
-| Dashboard | Zen Mode | Analytics |
-| :---: | :---: | :---: |
-| ![Dashboard Placeholder](https://via.placeholder.com/600x400/1e1e2e/cba6f7?text=FokeS+Dashboard) | ![Timer Placeholder](https://via.placeholder.com/600x400/181825/89b4fa?text=Zen+Work+Timer) | ![Stats Placeholder](https://via.placeholder.com/600x400/11111b/a6e3a1?text=Skill+Tree+Analytics) |
-
 ---
 
 ## 🚀 Getting Started
@@ -51,14 +42,6 @@ An interactive, GitHub-style contribution heatmap tracking your daily consistenc
    ```bash
    npm run dev
    ```
-
-### Quick Usage Guide
-
-1. **Configure Your Plan**: Head to the Settings modal and set up your **Program Configuration**. Define your Start Date, Duration, customized Routines, and the Subjects you want to conquer.
-2. **Edit Your Day**: Click "Edit Day" on the top right of your dashboard to drag and drop tasks into different groups, add ad-hoc focus blocks, or specifically overwrite today's agenda.
-3. **Focus Up**: Hit the "Play" icon on any upcoming task to launch the timer. Toggle **Zen Mode** (Maximize icon) or the **Mini-Player** (Minimize icon on the header) for your preferred work environment.
-4. **Review & Grow**: Visit the **Performance Analytics** tab to view your Skill Trees, Heatmap, and level up!
-
 ---
 
 ## 🛠️ Tech Stack
